@@ -66,6 +66,52 @@ th{color:#94a3b8;text-align:left}
   color:#fff;
   cursor:pointer;
 }
+
+/* TOAST */
+.toast{
+  position:fixed;
+  bottom:20px;
+  left:50%;
+  transform:translateX(-50%);
+  background:#022c22;
+  color:#a7f3d0;
+  padding:10px 16px;
+  border-radius:12px;
+  display:none;
+  font-size:14px;
+  z-index:999;
+}
+
+/* DIALOG */
+.overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.6);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  z-index:998;
+}
+.dialog{
+  background:#020617;
+  border-radius:14px;
+  padding:16px;
+  width:280px;
+  text-align:center;
+  border:1px solid rgba(255,255,255,.08);
+}
+.dialog p{font-size:14px;margin-bottom:14px}
+.dialog .row{justify-content:center}
+.noBtn{
+  background:#1f2933;
+  border:0;
+  color:#e5e7eb;
+}
+.yesBtn{
+  background:#7f1d1d;
+  border:0;
+  color:#fff;
+}
 </style>
 </head>
 
@@ -73,7 +119,7 @@ th{color:#94a3b8;text-align:left}
 <div class="wrap">
 
 <h1>FUN OWNER – ADMIN</h1>
-<div class="small">(Realtime Control)</div>
+<div class="small">(Realtime Control – No Login)</div>
 
 <!-- URL CONTROL -->
 <div class="card">
@@ -104,6 +150,20 @@ th{color:#94a3b8;text-align:left}
 
 </div>
 
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- DELETE DIALOG -->
+<div class="overlay" id="overlay">
+  <div class="dialog">
+    <p id="dlgText">Do you want to delete this user?</p>
+    <div class="row">
+      <button class="btn noBtn" onclick="closeDlg()">NO</button>
+      <button class="btn yesBtn" onclick="confirmDelete()">YES</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import { getDatabase, ref, onValue, set, remove, update } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
@@ -115,88 +175,94 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// elements
 const mobile = document.getElementById("mobile");
 const list = document.getElementById("list");
-const addBtn = document.getElementById("addUser");
+const toast = document.getElementById("toast");
 
 const titleInp = document.getElementById("title");
 const urlInp = document.getElementById("url");
-const saveUrlBtn = document.getElementById("saveUrl");
 
-function now(){
-  return new Date().toLocaleString();
+let deleteKey = "";
+
+/* TOAST */
+function showToast(msg){
+  toast.innerText = msg;
+  toast.style.display = "block";
+  setTimeout(()=>toast.style.display="none",2000);
 }
 
-/* ================= URL CONTROL ================= */
-
-// load existing url/title
+/* URL LOAD */
 onValue(ref(db,"data/data"), snap=>{
   if(!snap.exists()) return;
   const d = snap.val();
   titleInp.value = d.title || "";
-  urlInp.value   = d.url || "";
+  urlInp.value = d.url || "";
 });
 
-// save url/title
-saveUrlBtn.onclick = async ()=>{
-  const t = titleInp.value.trim();
+/* SAVE URL */
+document.getElementById("saveUrl").onclick = async ()=>{
   const u = urlInp.value.trim();
-  if(!u){ alert("Enter URL"); return; }
+  if(!u) return showToast("URL required");
 
   await update(ref(db,"data/data"),{
-    title:t,
+    title:titleInp.value.trim(),
     url:u
   });
 
-  alert("URL Updated");
+  showToast("Saved successfully");
 };
 
-/* ================= USER SYSTEM ================= */
-
-// ADD USER
-addBtn.onclick = async ()=>{
+/* ADD USER */
+document.getElementById("addUser").onclick = async ()=>{
   const m = mobile.value.trim();
-  if(!m){ alert("Enter mobile"); return; }
+  if(!m) return showToast("Enter mobile");
 
   await set(ref(db,"dbRef/"+m),{
     mobile:m,
     balance:"0",
     brand:"Owner",
-    time:now()
+    time:new Date().toLocaleString()
   });
 
   mobile.value="";
+  showToast("User added");
 };
 
-// LIST USERS
+/* LIST USERS */
 onValue(ref(db,"dbRef"), snap=>{
   if(!snap.exists()){
-    list.innerHTML = "<div class='small'>No users</div>";
+    list.innerHTML="<div class='small'>No users</div>";
     return;
   }
-
-  let html = "<table><tr><th>Mobile</th><th>Time</th><th>Action</th></tr>";
-  const data = snap.val();
-
-  Object.keys(data).sort().forEach(k=>{
-    html += `
-      <tr>
-        <td>${k}</td>
-        <td>${data[k].time||""}</td>
-        <td><button class="delBtn" onclick="delUser('${k}')">Delete</button></td>
-      </tr>
-    `;
+  let html="<table><tr><th>Mobile</th><th>Time</th><th>Action</th></tr>";
+  const d=snap.val();
+  Object.keys(d).forEach(k=>{
+    html+=`
+    <tr>
+      <td>${k}</td>
+      <td>${d[k].time||""}</td>
+      <td><button class="delBtn" onclick="openDlg('${k}')">Delete</button></td>
+    </tr>`;
   });
-
-  html += "</table>";
-  list.innerHTML = html;
+  html+="</table>";
+  list.innerHTML=html;
 });
 
-// DELETE USER
-window.delUser = async (key)=>{
-  if(!confirm("Delete user "+key+" ?")) return;
-  await remove(ref(db,"dbRef/"+key));
+/* DIALOG CONTROL */
+window.openDlg = (k)=>{
+  deleteKey = k;
+  document.getElementById("overlay").style.display="flex";
+};
+window.closeDlg = ()=>{
+  deleteKey="";
+  document.getElementById("overlay").style.display="none";
+};
+window.confirmDelete = async ()=>{
+  if(deleteKey){
+    await remove(ref(db,"dbRef/"+deleteKey));
+    showToast("User deleted");
+  }
+  closeDlg();
 };
 </script>
 
